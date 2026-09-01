@@ -2,7 +2,7 @@ name: tan-llm
 
 services:
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.33.2
     gpus: all
     volumes:
       - ollama_data:/root/.ollama
@@ -15,8 +15,11 @@ services:
       retries: 5
       start_period: 20s
 
+    networks:
+      - backend
+
   model-init:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.33.2
     environment:
       OLLAMA_HOST: http://ollama:11434
     depends_on:
@@ -24,6 +27,12 @@ services:
         condition: service_healthy
     command: ["pull", "qwen3.5:4b"]
     restart: "no"
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
 
 volumes:
   ollama_data:
