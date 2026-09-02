@@ -5,13 +5,18 @@ import "./types/fastify.js";
 import { initializeDatabase } from "./database/initialize.js";
 import { isOllamaAvailable } from "./services/ollama.js";
 
+import type { AuthConfig } from "./auth/config.js";
+import { registerAuthRoutes } from "./auth/routes.js";
+import { registerSession } from "./auth/session.js";
+
 interface BuildAppOptions {
+  authConfig: AuthConfig;
   database?: Database.Database;
   ollamaBaseUrl?: string;
   checkOllama?: (baseUrl: string) => Promise<boolean>;
 }
 
-export function buildApp(options: BuildAppOptions = {}) {
+export function buildApp(options: BuildAppOptions) {
   const app = Fastify({
     logger: true,
     ajv: {
@@ -39,6 +44,9 @@ export function buildApp(options: BuildAppOptions = {}) {
       app.database.close();
     }
   });
+
+  registerSession(app, options.authConfig);
+  registerAuthRoutes(app, options.authConfig);
 
   app.get("/healthz", async () => {
     return {
