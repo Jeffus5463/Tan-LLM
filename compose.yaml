@@ -41,6 +41,10 @@ services:
       PORT: 3001
       OLLAMA_BASE_URL: http://ollama:11434
       DATABASE_PATH: /data/tan-llm.db
+      AUTH_USERNAME: "${AUTH_USERNAME:?Set AUTH_USERNAME in .env}"
+      AUTH_PASSWORD_HASH: "${AUTH_PASSWORD_HASH:?Set AUTH_PASSWORD_HASH in .env}"
+      SESSION_SECRET: "${SESSION_SECRET:?Set SESSION_SECRET in .env}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-true}"
     volumes:
       - app_data:/data
     depends_on:
