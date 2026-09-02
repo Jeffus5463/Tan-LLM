@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-
 import { buildApp } from "../src/app.js";
+import { initializeDatabase } from "../src/database/initialize.js";
 
 describe("GET /healthz", () => {
   it("returns the API health status", async () => {
@@ -61,5 +61,21 @@ describe("GET /readyz", () => {
     });
 
     await app.close();
+  });
+});
+
+describe("database lifecycle", () => {
+  it("closes the database when the application closes", async () => {
+    const database = initializeDatabase(":memory:");
+    const app = buildApp({
+      database,
+    });
+
+    expect(app.database).toBe(database);
+    expect(database.open).toBe(true);
+
+    await app.close();
+
+    expect(database.open).toBe(false);
   });
 });
