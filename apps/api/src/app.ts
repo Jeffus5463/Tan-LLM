@@ -15,6 +15,9 @@ import { registerSession } from "./auth/session.js";
 import { ChatRepository } from "./chats/repository.js";
 import { registerChatRoutes } from "./chats/routes.js";
 import { GenerationCoordinator } from "./generation/coordinator.js";
+import { streamOllamaChat, type StreamOllamaChat } from "./generation/ollama.js";
+import { registerGenerationRoutes } from "./generation/routes.js";
+import { GenerationService } from "./generation/service.js";
 import { loadModelConfig, type ModelConfig } from "./models/config.js";
 import { registerModelRoutes } from "./models/routes.js";
 import { registerStatusRoutes } from "./status/routes.js";
@@ -29,6 +32,8 @@ interface BuildAppOptions {
     baseUrl: string,
   ) => Promise<readonly string[] | null>;
   modelConfig?: ModelConfig;
+  streamChat?: StreamOllamaChat;
+  generationClock?: () => number;
   trustProxy?: false | ProxyTrust;
 }
 
@@ -59,6 +64,17 @@ export function buildApp(options: BuildAppOptions) {
     options.listInstalledModels ?? listInstalledModelNames;
   const modelConfig = options.modelConfig ?? loadModelConfig();
   const chatRepository = new ChatRepository(database);
+  chatRepository.markStreamingMessagesInterrupted();
+  const generationService = new GenerationService({
+    repository: chatRepository,
+    coordinator: generationCoordinator,
+    allowedModels: modelConfig.allowedModels,
+    ollamaBaseUrl,
+    streamChat: options.streamChat ?? streamOllamaChat,
+    ...(options.generationClock
+      ? { clock: options.generationClock }
+      : {}),
+  });
 
   app.decorate("database", database);
 
@@ -76,6 +92,11 @@ export function buildApp(options: BuildAppOptions) {
     repository: chatRepository,
     generationCoordinator,
     ...modelConfig,
+  });
+
+  registerGenerationRoutes(app, {
+    username: options.authConfig.username,
+    generationService,
   });
 
   registerModelRoutes(app, {

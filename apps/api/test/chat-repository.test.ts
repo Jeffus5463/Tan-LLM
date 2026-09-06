@@ -125,6 +125,76 @@ describe("ChatRepository", () => {
     });
   });
 
+  it("creates generation message pairs and excludes unfinished replies from context", () => {
+    const { repository } = createRepository();
+    const chat = repository.createChat({
+      title: "Conversation context",
+      model: "qwen3.5:4b",
+    });
+
+    repository.createGenerationMessages({
+      chatId: chat.id,
+      userMessageId: "22222222-2222-4222-8222-222222222222",
+      assistantMessageId: "33333333-3333-4333-8333-333333333333",
+      content: "First question",
+    });
+    repository.saveAssistantMessage(
+      "33333333-3333-4333-8333-333333333333",
+      "First answer",
+      "complete",
+    );
+    repository.createGenerationMessages({
+      chatId: chat.id,
+      userMessageId: "44444444-4444-4444-8444-444444444444",
+      assistantMessageId: "55555555-5555-4555-8555-555555555555",
+      content: "Second question",
+    });
+    repository.saveAssistantMessage(
+      "55555555-5555-4555-8555-555555555555",
+      "Partial answer",
+      "cancelled",
+    );
+
+    expect(repository.getContextMessages(chat.id)).toEqual([
+      { role: "user", content: "First question" },
+      { role: "assistant", content: "First answer" },
+      { role: "user", content: "Second question" },
+    ]);
+    expect(repository.getChat(chat.id)?.messages).toMatchObject([
+      { sequence: 0, role: "user", status: "complete" },
+      { sequence: 1, role: "assistant", status: "complete" },
+      { sequence: 2, role: "user", status: "complete" },
+      { sequence: 3, role: "assistant", status: "cancelled" },
+    ]);
+  });
+
+  it("marks abandoned streaming responses interrupted", () => {
+    const { repository } = createRepository();
+    const chat = repository.createChat({
+      title: "Interrupted response",
+      model: "qwen3.5:4b",
+    });
+
+    repository.createGenerationMessages({
+      chatId: chat.id,
+      userMessageId: "22222222-2222-4222-8222-222222222222",
+      assistantMessageId: "33333333-3333-4333-8333-333333333333",
+      content: "Continue",
+    });
+    repository.saveAssistantMessage(
+      "33333333-3333-4333-8333-333333333333",
+      "Saved partial response",
+      "streaming",
+    );
+
+    expect(repository.markStreamingMessagesInterrupted()).toBe(1);
+    expect(repository.markStreamingMessagesInterrupted()).toBe(0);
+    expect(repository.getChat(chat.id)?.messages[1]).toMatchObject({
+      content: "Saved partial response",
+      status: "interrupted",
+    });
+  });
+
   it("preserves chats when the database is reopened", () => {
     const temporaryDirectory = mkdtempSync(
       join(tmpdir(), "tan-llm-chats-"),

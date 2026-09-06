@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import type Database from "better-sqlite3";
 
+import type { ConversationMessage } from "../generation/context.js";
+
 export interface ChatSummary {
   id: string;
   title: string;
@@ -55,6 +57,13 @@ interface CreateChatInput {
 interface UpdateChatInput {
   title?: string;
   model?: string;
+}
+
+interface CreateGenerationMessagesInput {
+  chatId: string;
+  userMessageId: string;
+  assistantMessageId: string;
+  content: string;
 }
 
 function mapChat(row: ChatRow): ChatSummary {
@@ -192,5 +201,160 @@ export class ChatRepository {
       .run(id);
 
     return result.changes > 0;
+  }
+
+  getContextMessages(chatId: string): ConversationMessage[] {
+    return this.database
+      .prepare<
+        [string],
+        ConversationMessage
+      >(
+        `
+        SELECT role, content
+        FROM messages
+        WHERE chat_id = ?
+          AND content <> ''
+          AND (role = 'user' OR status = 'complete')
+        ORDER BY sequence ASC
+      `,
+      )
+      .all(chatId);
+  }
+
+  createGenerationMessages(input: CreateGenerationMessagesInput): void {
+    const createMessages = this.database.transaction(() => {
+      const sequenceRow = this.database
+        .prepare<[string], { nextSequence: number }>(
+          `
+          SELECT COALESCE(MAX(sequence), -1) + 1 AS nextSequence
+          FROM messages
+          WHERE chat_id = ?
+        `,
+        )
+        .get(input.chatId);
+
+      const userSequence = sequenceRow?.nextSequence ?? 0;
+      const insertMessage = this.database.prepare<
+        [string, string, number, string, string, string]
+      >(
+        `
+        INSERT INTO messages (
+          id,
+          chat_id,
+          sequence,
+          role,
+          content,
+          status
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      );
+
+      insertMessage.run(
+        input.userMessageId,
+        input.chatId,
+        userSequence,
+        "user",
+        input.content,
+        "complete",
+      );
+      insertMessage.run(
+        input.assistantMessageId,
+        input.chatId,
+        userSequence + 1,
+        "assistant",
+        "",
+        "streaming",
+      );
+
+      this.touchChat(input.chatId);
+    });
+
+    createMessages.immediate();
+  }
+
+  saveAssistantMessage(
+    messageId: string,
+    content: string,
+    status: ChatMessage["status"],
+  ): void {
+    const saveMessage = this.database.transaction(() => {
+      const result = this.database
+        .prepare<[string, string, string]>(
+          `
+          UPDATE messages
+          SET
+            content = ?,
+            status = ?,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+          WHERE id = ? AND role = 'assistant'
+        `,
+        )
+        .run(content, status, messageId);
+
+      if (result.changes === 0) {
+        throw new Error("Assistant message could not be updated.");
+      }
+
+      this.database
+        .prepare<[string]>(
+          `
+          UPDATE chats
+          SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+          WHERE id = (
+            SELECT chat_id
+            FROM messages
+            WHERE id = ?
+          )
+        `,
+        )
+        .run(messageId);
+    });
+
+    saveMessage.immediate();
+  }
+
+  markStreamingMessagesInterrupted(): number {
+    const interruptMessages = this.database.transaction(() => {
+      this.database
+        .prepare(
+          `
+          UPDATE chats
+          SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+          WHERE id IN (
+            SELECT DISTINCT chat_id
+            FROM messages
+            WHERE status = 'streaming'
+          )
+        `,
+        )
+        .run();
+
+      return this.database
+        .prepare(
+          `
+          UPDATE messages
+          SET
+            status = 'interrupted',
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+          WHERE status = 'streaming'
+        `,
+        )
+        .run().changes;
+    });
+
+    return interruptMessages.immediate();
+  }
+
+  private touchChat(chatId: string): void {
+    this.database
+      .prepare<[string]>(
+        `
+        UPDATE chats
+        SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?
+      `,
+      )
+      .run(chatId);
   }
 }
