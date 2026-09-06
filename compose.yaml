@@ -40,6 +40,8 @@ services:
       HOST: 0.0.0.0
       PORT: 3001
       OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen3.5:4b}"
+      OLLAMA_ALLOWED_MODELS: "${OLLAMA_ALLOWED_MODELS:-}"
       DATABASE_PATH: /data/tan-llm.db
       AUTH_USERNAME: "${AUTH_USERNAME:?Set AUTH_USERNAME in .env}"
       AUTH_PASSWORD_HASH: "${AUTH_PASSWORD_HASH:?Set AUTH_PASSWORD_HASH in .env}"

@@ -260,3 +260,54 @@ describe("application status integration", () => {
     });
   });
 });
+
+describe("model discovery integration", () => {
+  it("serves installed allowlisted models through the application", async () => {
+    const app = buildApp({
+      authConfig,
+      modelConfig: {
+        defaultModel: "qwen3.5:4b",
+        allowedModels: ["qwen3.5:4b", "qwen3.5:2b"],
+      },
+      listInstalledModels: async () => [
+        "qwen3.5:4b",
+        "unconfigured:7b",
+      ],
+    });
+
+    onTestFinished(async () => {
+      await app.close();
+    });
+
+    const loginResponse = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: {
+        username: "owner",
+        password: "test-password",
+      },
+    });
+
+    const cookie = loginResponse.cookies.find(
+      (candidate) => candidate.name === "tan_llm_session",
+    );
+
+    if (!cookie) {
+      throw new Error("Session cookie is missing.");
+    }
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/models",
+      cookies: {
+        tan_llm_session: cookie.value,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      defaultModel: "qwen3.5:4b",
+      models: ["qwen3.5:4b"],
+    });
+  });
+});

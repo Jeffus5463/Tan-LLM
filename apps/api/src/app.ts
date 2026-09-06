@@ -3,13 +3,18 @@ import Fastify from "fastify";
 
 import "./types/fastify.js";
 import { initializeDatabase } from "./database/initialize.js";
-import { isOllamaAvailable } from "./services/ollama.js";
+import {
+  isOllamaAvailable,
+  listInstalledModelNames,
+} from "./services/ollama.js";
 import type { ProxyTrust } from "./proxy.js";
 
 import type { AuthConfig } from "./auth/config.js";
 import { registerAuthRoutes } from "./auth/routes.js";
 import { registerSession } from "./auth/session.js";
 import { GenerationCoordinator } from "./generation/coordinator.js";
+import { loadModelConfig, type ModelConfig } from "./models/config.js";
+import { registerModelRoutes } from "./models/routes.js";
 import { registerStatusRoutes } from "./status/routes.js";
 
 interface BuildAppOptions {
@@ -18,6 +23,10 @@ interface BuildAppOptions {
   ollamaBaseUrl?: string;
   checkOllama?: (baseUrl: string) => Promise<boolean>;
   generationCoordinator?: GenerationCoordinator;
+  listInstalledModels?: (
+    baseUrl: string,
+  ) => Promise<readonly string[] | null>;
+  modelConfig?: ModelConfig;
   trustProxy?: false | ProxyTrust;
 }
 
@@ -44,6 +53,9 @@ export function buildApp(options: BuildAppOptions) {
   const checkOllama = options.checkOllama ?? isOllamaAvailable;
   const generationCoordinator =
     options.generationCoordinator ?? new GenerationCoordinator();
+  const listInstalledModels =
+    options.listInstalledModels ?? listInstalledModelNames;
+  const modelConfig = options.modelConfig ?? loadModelConfig();
 
   app.decorate("database", database);
 
@@ -55,6 +67,13 @@ export function buildApp(options: BuildAppOptions) {
 
   registerSession(app, options.authConfig);
   registerAuthRoutes(app, options.authConfig);
+
+  registerModelRoutes(app, {
+    username: options.authConfig.username,
+    ollamaBaseUrl,
+    listInstalledModels,
+    ...modelConfig,
+  });
 
   registerStatusRoutes(app, {
     username: options.authConfig.username,
