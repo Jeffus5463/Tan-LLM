@@ -157,3 +157,64 @@ describe("authentication integration", () => {
     });
   });
 });
+
+describe("application status integration", () => {
+  it("serves authenticated application status", async () => {
+    const app = buildApp({
+      authConfig,
+      checkOllama: async () => true,
+      getActiveGeneration: () => ({
+        chatId: "chat-1",
+        messageId: "message-2",
+      }),
+    });
+
+    onTestFinished(async () => {
+      await app.close();
+    });
+
+    const anonymousResponse = await app.inject({
+      method: "GET",
+      url: "/api/status",
+    });
+
+    expect(anonymousResponse.statusCode).toBe(401);
+
+    const loginResponse = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: {
+        username: "owner",
+        password: "test-password",
+      },
+    });
+
+    const cookie = loginResponse.cookies.find(
+      (candidate) => candidate.name === "tan_llm_session",
+    );
+
+    if (!cookie) {
+      throw new Error("Session cookie is missing.");
+    }
+
+    const statusResponse = await app.inject({
+      method: "GET",
+      url: "/api/status",
+      cookies: {
+        tan_llm_session: cookie.value,
+      },
+    });
+
+    expect(statusResponse.statusCode).toBe(200);
+    expect(statusResponse.headers["cache-control"]).toBe("no-store");
+    expect(statusResponse.json()).toEqual({
+      services: {
+        ollama: "available",
+      },
+      activeGeneration: {
+        chatId: "chat-1",
+        messageId: "message-2",
+      },
+    });
+  });
+});

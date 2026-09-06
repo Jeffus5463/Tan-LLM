@@ -9,12 +9,17 @@ import type { ProxyTrust } from "./proxy.js";
 import type { AuthConfig } from "./auth/config.js";
 import { registerAuthRoutes } from "./auth/routes.js";
 import { registerSession } from "./auth/session.js";
+import {
+  registerStatusRoutes,
+  type ActiveGenerationSummary,
+} from "./status/routes.js";
 
 interface BuildAppOptions {
   authConfig: AuthConfig;
   database?: Database.Database;
   ollamaBaseUrl?: string;
   checkOllama?: (baseUrl: string) => Promise<boolean>;
+  getActiveGeneration?: () => ActiveGenerationSummary | null;
   trustProxy?: false | ProxyTrust;
 }
 
@@ -50,6 +55,13 @@ export function buildApp(options: BuildAppOptions) {
 
   registerSession(app, options.authConfig);
   registerAuthRoutes(app, options.authConfig);
+
+  registerStatusRoutes(app, {
+    username: options.authConfig.username,
+    ollamaBaseUrl,
+    checkOllama,
+    getActiveGeneration: options.getActiveGeneration ?? (() => null),
+  });
 
   app.get("/healthz", async () => {
     return {
