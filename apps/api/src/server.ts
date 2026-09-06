@@ -2,7 +2,7 @@ import { buildApp } from "./app.js";
 import { loadAuthConfig } from "./auth/config.js";
 import { loadProxyTrust } from "./proxy.js";
 
-const host = process.env.HOST ?? "0.0.0.0";
+const host = process.env.HOST ?? "127.0.0.1";
 const port = Number.parseInt(process.env.PORT ?? "3001", 10);
 
 const authConfig = await loadAuthConfig(process.env);
