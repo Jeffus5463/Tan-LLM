@@ -2,6 +2,7 @@ import rateLimit from "@fastify/rate-limit";
 import type { FastifyInstance } from "fastify";
 
 import type { AuthConfig } from "./config.js";
+import { createRequireSession } from "./guard.js";
 import { verifyPassword } from "./password.js";
 
 interface LoginBody {
@@ -31,6 +32,7 @@ export function registerAuthRoutes(
   app: FastifyInstance,
   config: Pick<AuthConfig, "username" | "passwordHash">,
 ): void {
+  const requireSession = createRequireSession(config.username);
   app.register(async (authRoutes) => {
     authRoutes.addHook("onRequest", async (_request, reply) => {
       reply.header("Cache-Control", "no-store");
@@ -75,17 +77,17 @@ export function registerAuthRoutes(
       },
     );
 
-    authRoutes.get("/api/auth/session", async (request, reply) => {
-      const username = request.session.get("username");
-
-      if (username !== config.username) {
-        return reply.code(401).send({
-          error: "Unauthorized",
-        });
-      }
-
-      return { username };
-    });
+    authRoutes.get(
+      "/api/auth/session",
+      {
+        onRequest: requireSession,
+      },
+      async (request) => {
+        return {
+          username: request.session.get("username"),
+        };
+      },
+    );
 
     authRoutes.post("/api/auth/logout", async (request, reply) => {
       request.session.delete();
