@@ -95,6 +95,14 @@ export function useSession() {
     }
   }, []);
 
+  const expireSession = useCallback(() => {
+    setSession({
+      phase: "anonymous",
+      message: "Your session expired. Sign in again.",
+    });
+    setShellMessage(undefined);
+  }, []);
+
   return {
     session,
     loginPending,
@@ -103,5 +111,6 @@ export function useSession() {
     checkSession,
     signIn,
     signOut,
+    expireSession,
   };
 }

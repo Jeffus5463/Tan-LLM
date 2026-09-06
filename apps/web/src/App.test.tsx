@@ -4,6 +4,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App.js";
 
+interface ApiBehavior {
+  session: Array<Response | Error>;
+  login?: Response;
+  logout?: Response;
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -13,15 +19,64 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function requestPath(input: RequestInfo | URL): string {
+  if (typeof input === "string") {
+    return input;
+  }
+
+  return input instanceof URL ? input.toString() : input.url;
+}
+
+function createApiMock(behavior: ApiBehavior) {
+  const sessionResults = [...behavior.session];
+  const fetchMock = vi.fn<typeof fetch>(async (input) => {
+    const path = requestPath(input);
+
+    if (path === "/api/auth/session") {
+      const result = sessionResults.shift();
+
+      if (result instanceof Error) {
+        throw result;
+      }
+
+      return result ?? jsonResponse({ error: "Unauthorized" }, 401);
+    }
+
+    if (path === "/api/auth/login") {
+      return behavior.login ?? jsonResponse({ error: "Unauthorized" }, 401);
+    }
+
+    if (path === "/api/auth/logout") {
+      return behavior.logout ?? new Response(null, { status: 204 });
+    }
+
+    if (path === "/api/chats") {
+      return jsonResponse({ chats: [] });
+    }
+
+    if (path === "/api/models") {
+      return jsonResponse({
+        defaultModel: "qwen3.5:4b",
+        models: ["qwen3.5:4b"],
+      });
+    }
+
+    return jsonResponse({ error: "Not found" }, 404);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  return fetchMock;
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("App authentication", () => {
   it("shows the login page when there is no active session", async () => {
-    const fetchMock = vi.fn<typeof fetch>();
-    fetchMock.mockResolvedValueOnce(jsonResponse({ error: "Unauthorized" }, 401));
-    vi.stubGlobal("fetch", fetchMock);
+    createApiMock({
+      session: [jsonResponse({ error: "Unauthorized" }, 401)],
+    });
 
     render(<App />);
 
@@ -38,9 +93,9 @@ describe("App authentication", () => {
   });
 
   it("restores an existing session into the application shell", async () => {
-    const fetchMock = vi.fn<typeof fetch>();
-    fetchMock.mockResolvedValueOnce(jsonResponse({ username: "owner" }));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = createApiMock({
+      session: [jsonResponse({ username: "owner" })],
+    });
 
     render(<App />);
 
@@ -57,11 +112,10 @@ describe("App authentication", () => {
   });
 
   it("signs in with the shared household credentials", async () => {
-    const fetchMock = vi.fn<typeof fetch>();
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ error: "Unauthorized" }, 401))
-      .mockResolvedValueOnce(jsonResponse({ username: "owner" }));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = createApiMock({
+      session: [jsonResponse({ error: "Unauthorized" }, 401)],
+      login: jsonResponse({ username: "owner" }),
+    });
     const user = userEvent.setup();
 
     render(<App />);
@@ -75,25 +129,24 @@ describe("App authentication", () => {
         name: "Your household workspace",
       }),
     ).toBeTruthy();
-    const [, loginOptions] = fetchMock.mock.calls[1] ?? [];
-    expect(loginOptions).toMatchObject({
-      method: "POST",
-      credentials: "same-origin",
-      body: JSON.stringify({
-        username: "owner",
-        password: "test-password",
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/auth/login",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: JSON.stringify({
+          username: "owner",
+          password: "test-password",
+        }),
       }),
-    });
+    );
   });
 
   it("shows the same safe message for invalid credentials", async () => {
-    const fetchMock = vi.fn<typeof fetch>();
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ error: "Unauthorized" }, 401))
-      .mockResolvedValueOnce(
-        jsonResponse({ error: "Invalid credentials" }, 401),
-      );
-    vi.stubGlobal("fetch", fetchMock);
+    createApiMock({
+      session: [jsonResponse({ error: "Unauthorized" }, 401)],
+      login: jsonResponse({ error: "Invalid credentials" }, 401),
+    });
     const user = userEvent.setup();
 
     render(<App />);
@@ -112,13 +165,10 @@ describe("App authentication", () => {
   });
 
   it("explains when login has been rate-limited", async () => {
-    const fetchMock = vi.fn<typeof fetch>();
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ error: "Unauthorized" }, 401))
-      .mockResolvedValueOnce(
-        jsonResponse({ error: "Rate limit exceeded" }, 429),
-      );
-    vi.stubGlobal("fetch", fetchMock);
+    createApiMock({
+      session: [jsonResponse({ error: "Unauthorized" }, 401)],
+      login: jsonResponse({ error: "Rate limit exceeded" }, 429),
+    });
     const user = userEvent.setup();
 
     render(<App />);
@@ -133,11 +183,12 @@ describe("App authentication", () => {
   });
 
   it("retries the session check when the local service returns", async () => {
-    const fetchMock = vi.fn<typeof fetch>();
-    fetchMock
-      .mockRejectedValueOnce(new TypeError("fetch failed"))
-      .mockResolvedValueOnce(jsonResponse({ username: "owner" }));
-    vi.stubGlobal("fetch", fetchMock);
+    createApiMock({
+      session: [
+        new TypeError("fetch failed"),
+        jsonResponse({ username: "owner" }),
+      ],
+    });
     const user = userEvent.setup();
 
     render(<App />);
@@ -158,11 +209,10 @@ describe("App authentication", () => {
   });
 
   it("signs out and returns to the login page", async () => {
-    const fetchMock = vi.fn<typeof fetch>();
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ username: "owner" }))
-      .mockResolvedValueOnce(new Response(null, { status: 204 }));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = createApiMock({
+      session: [jsonResponse({ username: "owner" })],
+      logout: new Response(null, { status: 204 }),
+    });
     const user = userEvent.setup();
 
     render(<App />);
@@ -174,7 +224,7 @@ describe("App authentication", () => {
     expect(
       await screen.findByRole("heading", { name: "Welcome home" }),
     ).toBeTruthy();
-    expect(fetchMock).toHaveBeenLastCalledWith(
+    expect(fetchMock).toHaveBeenCalledWith(
       "/api/auth/logout",
       expect.objectContaining({
         method: "POST",

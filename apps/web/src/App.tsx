@@ -13,6 +13,7 @@ export function App() {
     checkSession,
     signIn,
     signOut,
+    expireSession,
   } = useSession();
 
   if (session.phase === "checking") {
@@ -39,6 +40,7 @@ export function App() {
       logoutPending={logoutPending}
       message={shellMessage}
       onLogout={signOut}
+      onSessionExpired={expireSession}
     />
   );
 }

@@ -1,3 +1,7 @@
+import { useEffect, useState, type FormEvent } from "react";
+
+import type { ChatSummary } from "../api/client.js";
+import { useChatWorkspace } from "../chats/useChatWorkspace.js";
 import { Brand } from "./Brand.js";
 
 interface ChatShellProps {
@@ -5,31 +9,170 @@ interface ChatShellProps {
   logoutPending: boolean;
   message?: string;
   onLogout: () => Promise<void>;
+  onSessionExpired: () => void;
+}
+
+interface ConversationListProps {
+  chats: ChatSummary[];
+  selectedChatId: string | null;
+  loading: boolean;
+  onSelect: (chatId: string) => void;
+}
+
+function ConversationList({
+  chats,
+  selectedChatId,
+  loading,
+  onSelect,
+}: ConversationListProps) {
+  if (loading) {
+    return <p className="conversation-list__status">Loading conversations…</p>;
+  }
+
+  if (chats.length === 0) {
+    return (
+      <div className="conversation-list__empty">
+        <span aria-hidden="true">•••</span>
+        <p>No shared conversations yet.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="conversation-list__items">
+      {chats.map((chat) => (
+        <button
+          className={`conversation-item${
+            chat.id === selectedChatId ? " conversation-item--active" : ""
+          }`}
+          type="button"
+          aria-current={chat.id === selectedChatId ? "page" : undefined}
+          key={chat.id}
+          onClick={() => onSelect(chat.id)}
+        >
+          <strong>{chat.title}</strong>
+          <span>{chat.model}</span>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export function ChatShell({
   username,
   logoutPending,
-  message,
+  message: sessionMessage,
   onLogout,
+  onSessionExpired,
 }: ChatShellProps) {
+  const workspace = useChatWorkspace(onSessionExpired);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
+
+  const selectedChatId = workspace.selectedChat?.id ?? null;
+
+  useEffect(() => {
+    setRenaming(false);
+    setDraftTitle(workspace.selectedChat?.title ?? "");
+  }, [selectedChatId, workspace.selectedChat?.title]);
+
+  const selectChat = (chatId: string) => {
+    workspace.selectChat(chatId);
+    setSidebarOpen(false);
+  };
+
+  const submitRename = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (await workspace.renameChat(draftTitle)) {
+      setRenaming(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    const chat = workspace.selectedChat;
+
+    if (!chat) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${chat.title}"? This removes it from the shared household history.`,
+    );
+
+    if (confirmed) {
+      await workspace.deleteChat();
+    }
+  };
+
+  const createConversation = async () => {
+    await workspace.createChat();
+    setSidebarOpen(false);
+  };
+
+  const currentModelMissing =
+    workspace.selectedChat !== null &&
+    !workspace.models.includes(workspace.selectedChat.model);
+  const modelOptions = currentModelMissing && workspace.selectedChat
+    ? [workspace.selectedChat.model, ...workspace.models]
+    : workspace.models;
+  const actionPending = workspace.pendingAction !== null;
+  const displayedMessage = sessionMessage ?? workspace.message;
+
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      {sidebarOpen ? (
+        <button
+          className="sidebar-backdrop"
+          type="button"
+          aria-label="Close conversations"
+          onClick={() => setSidebarOpen(false)}
+        />
+      ) : null}
+
+      <aside
+        className={`sidebar${sidebarOpen ? " sidebar--open" : ""}`}
+        id="conversation-sidebar"
+      >
         <div className="sidebar__header">
-          <Brand compact />
-          <p>Household workspace</p>
+          <div>
+            <Brand compact />
+            <p>Household workspace</p>
+          </div>
+          <button
+            className="icon-button sidebar__close"
+            type="button"
+            aria-label="Close conversations"
+            onClick={() => setSidebarOpen(false)}
+          >
+            ×
+          </button>
         </div>
+
+        <button
+          className="new-conversation"
+          type="button"
+          disabled={actionPending}
+          onClick={() => void createConversation()}
+        >
+          <span aria-hidden="true">+</span>
+          {workspace.pendingAction === "create"
+            ? "Creating…"
+            : "New conversation"}
+        </button>
 
         <nav className="conversation-list" aria-label="Shared conversations">
           <div className="conversation-list__heading">
             <span>Conversations</span>
-            <span className="conversation-count">0</span>
+            <span className="conversation-count">{workspace.chats.length}</span>
           </div>
-          <div className="conversation-list__empty">
-            <span aria-hidden="true">•••</span>
-            <p>Your shared conversations will appear here.</p>
-          </div>
+          <ConversationList
+            chats={workspace.chats}
+            selectedChatId={selectedChatId}
+            loading={workspace.phase === "loading"}
+            onSelect={selectChat}
+          />
         </nav>
 
         <div className="sidebar__account">
@@ -55,31 +198,185 @@ export function ChatShell({
 
       <main className="workspace">
         <header className="workspace__header">
-          <Brand compact />
+          <div className="workspace__mobile-brand">
+            <button
+              className="icon-button workspace__menu"
+              type="button"
+              aria-label="Open conversations"
+              aria-controls="conversation-sidebar"
+              aria-expanded={sidebarOpen}
+              onClick={() => setSidebarOpen(true)}
+            >
+              ☰
+            </button>
+            <Brand compact />
+          </div>
           <span className="workspace__scope">Shared household history</span>
         </header>
 
-        {message ? (
-          <p className="shell-message" role="alert">
-            {message}
-          </p>
+        {displayedMessage ? (
+          <div className="shell-message" role="alert">
+            <span>{displayedMessage}</span>
+            {!sessionMessage ? (
+              <button
+                type="button"
+                aria-label="Dismiss message"
+                onClick={workspace.clearMessage}
+              >
+                ×
+              </button>
+            ) : null}
+          </div>
         ) : null}
 
-        <section className="workspace__welcome" aria-labelledby="welcome-heading">
-          <div className="welcome-mark" aria-hidden="true">
-            T
-          </div>
-          <p className="eyebrow">Local conversations</p>
-          <h1 id="welcome-heading">Your household workspace</h1>
-          <p>
-            Private model access and shared conversation history, hosted on
-            your own network.
-          </p>
-          <div className="privacy-note">
-            <span className="privacy-note__dot" aria-hidden="true" />
-            Messages stay within this local setup
-          </div>
-        </section>
+        {workspace.phase === "error" ? (
+          <section className="workspace__state" aria-labelledby="load-error-title">
+            <p className="eyebrow">Connection problem</p>
+            <h1 id="load-error-title">Conversations are unavailable</h1>
+            <p>The shared history could not be loaded from the laptop.</p>
+            <button
+              className="button button--primary"
+              type="button"
+              onClick={() => void workspace.refresh()}
+            >
+              Try again
+            </button>
+          </section>
+        ) : workspace.selectedChat ? (
+          <section className="conversation-workspace">
+            <header className="conversation-header">
+              <div className="conversation-heading">
+                {renaming ? (
+                  <form className="rename-form" onSubmit={submitRename}>
+                    <label htmlFor="conversation-title">Conversation title</label>
+                    <div>
+                      <input
+                        id="conversation-title"
+                        value={draftTitle}
+                        maxLength={120}
+                        autoFocus
+                        onChange={(event) => setDraftTitle(event.target.value)}
+                      />
+                      <button
+                        className="button button--primary button--small"
+                        type="submit"
+                        disabled={actionPending}
+                      >
+                        {workspace.pendingAction === "rename" ? "Saving…" : "Save"}
+                      </button>
+                      <button
+                        className="button button--secondary button--small"
+                        type="button"
+                        disabled={actionPending}
+                        onClick={() => {
+                          setRenaming(false);
+                          setDraftTitle(workspace.selectedChat?.title ?? "");
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <p className="eyebrow">Shared conversation</p>
+                    <h1>{workspace.selectedChat.title}</h1>
+                  </>
+                )}
+              </div>
+
+              {!renaming ? (
+                <div className="conversation-actions">
+                  <label className="model-picker">
+                    <span>Model</span>
+                    <select
+                      value={workspace.selectedChat.model}
+                      disabled={
+                        actionPending ||
+                        workspace.modelsPhase !== "ready" ||
+                        workspace.models.length === 0
+                      }
+                      onChange={(event) =>
+                        void workspace.changeModel(event.target.value)
+                      }
+                    >
+                      {modelOptions.map((model) => (
+                        <option value={model} key={model}>
+                          {model}
+                          {!workspace.models.includes(model)
+                            ? " (unavailable)"
+                            : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    className="button button--secondary button--small"
+                    type="button"
+                    disabled={actionPending}
+                    onClick={() => setRenaming(true)}
+                  >
+                    Rename
+                  </button>
+                  <button
+                    className="button button--danger button--small"
+                    type="button"
+                    disabled={actionPending}
+                    onClick={() => void confirmDelete()}
+                  >
+                    {workspace.pendingAction === "delete" ? "Deleting…" : "Delete"}
+                  </button>
+                </div>
+              ) : null}
+            </header>
+
+            {workspace.modelsPhase === "loading" ? (
+              <p className="model-status">Checking installed models…</p>
+            ) : workspace.modelsPhase === "unavailable" ? (
+              <p className="model-status model-status--warning">
+                Model availability could not be checked. Existing conversations
+                remain accessible.
+              </p>
+            ) : workspace.models.length === 0 ? (
+              <p className="model-status model-status--warning">
+                No configured models are currently installed.
+              </p>
+            ) : null}
+
+            <div className="conversation-placeholder">
+              <div className="welcome-mark" aria-hidden="true">
+                T
+              </div>
+              <h2>Ready when you are</h2>
+              <p>This shared conversation is available to everyone signed in at home.</p>
+            </div>
+          </section>
+        ) : (
+          <section className="workspace__welcome" aria-labelledby="welcome-heading">
+            <div className="welcome-mark" aria-hidden="true">
+              T
+            </div>
+            <p className="eyebrow">Local conversations</p>
+            <h1 id="welcome-heading">Your household workspace</h1>
+            <p>
+              Create the first conversation for your shared household history.
+            </p>
+            <button
+              className="button button--primary welcome-action"
+              type="button"
+              disabled={actionPending}
+              onClick={() => void createConversation()}
+            >
+              {workspace.pendingAction === "create"
+                ? "Creating…"
+                : "New conversation"}
+            </button>
+            <div className="privacy-note">
+              <span className="privacy-note__dot" aria-hidden="true" />
+              Messages stay within this local setup
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );

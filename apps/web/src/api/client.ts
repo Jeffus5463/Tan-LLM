@@ -7,6 +7,55 @@ export interface LoginCredentials {
   password: string;
 }
 
+export interface ChatSummary {
+  id: string;
+  title: string;
+  model: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  sequence: number;
+  role: "user" | "assistant";
+  content: string;
+  status: "streaming" | "complete" | "cancelled" | "interrupted" | "error";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatDetail extends ChatSummary {
+  messages: ChatMessage[];
+}
+
+export interface ModelsResponse {
+  defaultModel: string | null;
+  models: string[];
+}
+
+interface ChatListResponse {
+  chats: ChatSummary[];
+}
+
+interface ChatResponse {
+  chat: ChatSummary;
+}
+
+interface ChatDetailResponse {
+  chat: ChatDetail;
+}
+
+export interface CreateChatInput {
+  title?: string;
+  model?: string;
+}
+
+export interface UpdateChatInput {
+  title?: string;
+  model?: string;
+}
+
 interface ErrorPayload {
   error?: unknown;
 }
@@ -96,4 +145,54 @@ export function logout(): Promise<void> {
   return request<void>("/api/auth/logout", {
     method: "POST",
   });
+}
+
+export async function listChats(): Promise<ChatSummary[]> {
+  const response = await request<ChatListResponse>("/api/chats");
+
+  return response.chats;
+}
+
+export async function createChat(
+  input: CreateChatInput = {},
+): Promise<ChatSummary> {
+  const response = await request<ChatResponse>("/api/chats", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  return response.chat;
+}
+
+export async function getChat(chatId: string): Promise<ChatDetail> {
+  const response = await request<ChatDetailResponse>(
+    `/api/chats/${encodeURIComponent(chatId)}`,
+  );
+
+  return response.chat;
+}
+
+export async function updateChat(
+  chatId: string,
+  input: UpdateChatInput,
+): Promise<ChatSummary> {
+  const response = await request<ChatResponse>(
+    `/api/chats/${encodeURIComponent(chatId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+
+  return response.chat;
+}
+
+export function deleteChat(chatId: string): Promise<void> {
+  return request<void>(`/api/chats/${encodeURIComponent(chatId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function listModels(): Promise<ModelsResponse> {
+  return request<ModelsResponse>("/api/models");
 }

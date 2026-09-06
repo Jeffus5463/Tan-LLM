@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, getSession } from "./client.js";
+import {
+  ApiError,
+  createChat,
+  deleteChat,
+  getSession,
+  listChats,
+  listModels,
+  updateChat,
+} from "./client.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -55,5 +63,64 @@ describe("API client", () => {
       status: 0,
       message: "The local service could not be reached.",
     });
+  });
+
+  it("uses the shared chat and model endpoints", async () => {
+    const chat = {
+      id: "chat-1",
+      title: "New chat",
+      model: "qwen3.5:4b",
+      createdAt: "2026-09-07T00:00:00.000Z",
+      updatedAt: "2026-09-07T00:00:00.000Z",
+    };
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      const path = input.toString();
+
+      if (path === "/api/chats" && init?.method === "POST") {
+        return new Response(JSON.stringify({ chat }), { status: 201 });
+      }
+
+      if (path === "/api/chats") {
+        return new Response(JSON.stringify({ chats: [chat] }));
+      }
+
+      if (path === "/api/chats/chat-1" && init?.method === "PATCH") {
+        return new Response(
+          JSON.stringify({ chat: { ...chat, title: "Renamed" } }),
+        );
+      }
+
+      if (path === "/api/chats/chat-1" && init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+
+      if (path === "/api/models") {
+        return new Response(
+          JSON.stringify({
+            defaultModel: "qwen3.5:4b",
+            models: ["qwen3.5:4b"],
+          }),
+        );
+      }
+
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listChats()).resolves.toEqual([chat]);
+    await expect(createChat({ model: "qwen3.5:4b" })).resolves.toEqual(chat);
+    await expect(updateChat("chat-1", { title: "Renamed" })).resolves.toMatchObject(
+      { title: "Renamed" },
+    );
+    await expect(deleteChat("chat-1")).resolves.toBeUndefined();
+    await expect(listModels()).resolves.toEqual({
+      defaultModel: "qwen3.5:4b",
+      models: ["qwen3.5:4b"],
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/chats/chat-1",
+      expect.objectContaining({ method: "DELETE" }),
+    );
   });
 });
