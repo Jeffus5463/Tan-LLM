@@ -1,17 +1,13 @@
 import type { FastifyInstance } from "fastify";
 
 import { createRequireSession } from "../auth/guard.js";
-
-export interface ActiveGenerationSummary {
-  chatId: string;
-  messageId: string;
-}
+import type { ActiveGeneration } from "../generation/coordinator.js";
 
 interface StatusRoutesOptions {
   username: string;
   ollamaBaseUrl: string;
   checkOllama: (baseUrl: string) => Promise<boolean>;
-  getActiveGeneration: () => ActiveGenerationSummary | null;
+  getActiveGeneration: () => ActiveGeneration | null;
 }
 
 export function registerStatusRoutes(

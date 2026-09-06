@@ -6,6 +6,7 @@ import { buildApp } from "../src/app.js";
 import type { AuthConfig } from "../src/auth/config.js";
 import { hashPassword } from "../src/auth/password.js";
 import { initializeDatabase } from "../src/database/initialize.js";
+import { GenerationCoordinator } from "../src/generation/coordinator.js";
 
 let authConfig: AuthConfig;
 
@@ -159,14 +160,12 @@ describe("authentication integration", () => {
 });
 
 describe("application status integration", () => {
-  it("serves authenticated application status", async () => {
+  it("tracks the shared generation coordinator", async () => {
+    const generationCoordinator = new GenerationCoordinator();
     const app = buildApp({
       authConfig,
       checkOllama: async () => true,
-      getActiveGeneration: () => ({
-        chatId: "chat-1",
-        messageId: "message-2",
-      }),
+      generationCoordinator,
     });
 
     onTestFinished(async () => {
@@ -197,7 +196,7 @@ describe("application status integration", () => {
       throw new Error("Session cookie is missing.");
     }
 
-    const statusResponse = await app.inject({
+    const idleStatusResponse = await app.inject({
       method: "GET",
       url: "/api/status",
       cookies: {
@@ -205,9 +204,34 @@ describe("application status integration", () => {
       },
     });
 
-    expect(statusResponse.statusCode).toBe(200);
-    expect(statusResponse.headers["cache-control"]).toBe("no-store");
-    expect(statusResponse.json()).toEqual({
+    expect(idleStatusResponse.statusCode).toBe(200);
+    expect(idleStatusResponse.headers["cache-control"]).toBe("no-store");
+    expect(idleStatusResponse.json()).toEqual({
+      services: {
+        ollama: "available",
+      },
+      activeGeneration: null,
+    });
+
+    const lease = generationCoordinator.tryAcquire({
+      chatId: "chat-1",
+      messageId: "message-2",
+    });
+
+    if (!lease) {
+      throw new Error("The generation lease was not acquired.");
+    }
+
+    const activeStatusResponse = await app.inject({
+      method: "GET",
+      url: "/api/status",
+      cookies: {
+        tan_llm_session: cookie.value,
+      },
+    });
+
+    expect(activeStatusResponse.statusCode).toBe(200);
+    expect(activeStatusResponse.json()).toEqual({
       services: {
         ollama: "available",
       },
@@ -215,6 +239,24 @@ describe("application status integration", () => {
         chatId: "chat-1",
         messageId: "message-2",
       },
+    });
+
+    lease.release();
+
+    const releasedStatusResponse = await app.inject({
+      method: "GET",
+      url: "/api/status",
+      cookies: {
+        tan_llm_session: cookie.value,
+      },
+    });
+
+    expect(releasedStatusResponse.statusCode).toBe(200);
+    expect(releasedStatusResponse.json()).toEqual({
+      services: {
+        ollama: "available",
+      },
+      activeGeneration: null,
     });
   });
 });

@@ -9,17 +9,15 @@ import type { ProxyTrust } from "./proxy.js";
 import type { AuthConfig } from "./auth/config.js";
 import { registerAuthRoutes } from "./auth/routes.js";
 import { registerSession } from "./auth/session.js";
-import {
-  registerStatusRoutes,
-  type ActiveGenerationSummary,
-} from "./status/routes.js";
+import { GenerationCoordinator } from "./generation/coordinator.js";
+import { registerStatusRoutes } from "./status/routes.js";
 
 interface BuildAppOptions {
   authConfig: AuthConfig;
   database?: Database.Database;
   ollamaBaseUrl?: string;
   checkOllama?: (baseUrl: string) => Promise<boolean>;
-  getActiveGeneration?: () => ActiveGenerationSummary | null;
+  generationCoordinator?: GenerationCoordinator;
   trustProxy?: false | ProxyTrust;
 }
 
@@ -44,6 +42,8 @@ export function buildApp(options: BuildAppOptions) {
     "http://ollama:11434";
 
   const checkOllama = options.checkOllama ?? isOllamaAvailable;
+  const generationCoordinator =
+    options.generationCoordinator ?? new GenerationCoordinator();
 
   app.decorate("database", database);
 
@@ -60,7 +60,8 @@ export function buildApp(options: BuildAppOptions) {
     username: options.authConfig.username,
     ollamaBaseUrl,
     checkOllama,
-    getActiveGeneration: options.getActiveGeneration ?? (() => null),
+    getActiveGeneration: () =>
+      generationCoordinator.getActiveGeneration(),
   });
 
   app.get("/healthz", async () => {

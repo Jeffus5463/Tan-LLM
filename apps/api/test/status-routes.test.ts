@@ -4,14 +4,12 @@ import Fastify from "fastify";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { registerSession } from "../src/auth/session.js";
-import {
-  registerStatusRoutes,
-  type ActiveGenerationSummary,
-} from "../src/status/routes.js";
+import type { ActiveGeneration } from "../src/generation/coordinator.js";
+import { registerStatusRoutes } from "../src/status/routes.js";
 
 interface TestAppOptions {
   checkOllama?: (baseUrl: string) => Promise<boolean>;
-  getActiveGeneration?: () => ActiveGenerationSummary | null;
+  getActiveGeneration?: () => ActiveGeneration | null;
 }
 
 function buildTestApp(options: TestAppOptions = {}) {
