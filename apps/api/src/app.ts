@@ -12,6 +12,8 @@ import type { ProxyTrust } from "./proxy.js";
 import type { AuthConfig } from "./auth/config.js";
 import { registerAuthRoutes } from "./auth/routes.js";
 import { registerSession } from "./auth/session.js";
+import { ChatRepository } from "./chats/repository.js";
+import { registerChatRoutes } from "./chats/routes.js";
 import { GenerationCoordinator } from "./generation/coordinator.js";
 import { loadModelConfig, type ModelConfig } from "./models/config.js";
 import { registerModelRoutes } from "./models/routes.js";
@@ -56,6 +58,7 @@ export function buildApp(options: BuildAppOptions) {
   const listInstalledModels =
     options.listInstalledModels ?? listInstalledModelNames;
   const modelConfig = options.modelConfig ?? loadModelConfig();
+  const chatRepository = new ChatRepository(database);
 
   app.decorate("database", database);
 
@@ -67,6 +70,13 @@ export function buildApp(options: BuildAppOptions) {
 
   registerSession(app, options.authConfig);
   registerAuthRoutes(app, options.authConfig);
+
+  registerChatRoutes(app, {
+    username: options.authConfig.username,
+    repository: chatRepository,
+    generationCoordinator,
+    ...modelConfig,
+  });
 
   registerModelRoutes(app, {
     username: options.authConfig.username,
