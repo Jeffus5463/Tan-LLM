@@ -4,6 +4,7 @@ import Fastify from "fastify";
 import "./types/fastify.js";
 import { initializeDatabase } from "./database/initialize.js";
 import { isOllamaAvailable } from "./services/ollama.js";
+import type { ProxyTrust } from "./proxy.js";
 
 import type { AuthConfig } from "./auth/config.js";
 import { registerAuthRoutes } from "./auth/routes.js";
@@ -14,11 +15,13 @@ interface BuildAppOptions {
   database?: Database.Database;
   ollamaBaseUrl?: string;
   checkOllama?: (baseUrl: string) => Promise<boolean>;
+  trustProxy?: false | ProxyTrust;
 }
 
 export function buildApp(options: BuildAppOptions) {
   const app = Fastify({
     logger: true,
+    trustProxy: options.trustProxy ?? false,
     ajv: {
       customOptions: {
         removeAdditional: false,

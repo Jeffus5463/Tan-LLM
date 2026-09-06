@@ -43,8 +43,54 @@ describe("loadAuthConfig", () => {
           COOKIE_SECURE: "false",
         }),
       ).rejects.toThrow(
-        "COOKIE_SECURE=false is allowed only when NODE_ENV=development.",
+        "COOKIE_SECURE=false requires ALLOW_LAN_HTTP=true outside development.",
       );
+    },
+  );
+
+  it("allows production HTTP cookies with explicit LAN acknowledgement", async () => {
+    const config = await loadAuthConfig({
+      ...environment,
+      NODE_ENV: "production",
+      COOKIE_SECURE: "false",
+      ALLOW_LAN_HTTP: "true",
+    });
+
+    expect(config.cookieSecure).toBe(false);
+  });
+
+  it("keeps secure cookies when only LAN HTTP is acknowledged", async () => {
+    const config = await loadAuthConfig({
+      ...environment,
+      NODE_ENV: "production",
+      ALLOW_LAN_HTTP: "true",
+    });
+
+    expect(config.cookieSecure).toBe(true);
+  });
+
+  it("rejects production HTTP cookies when LAN HTTP is explicitly disabled", async () => {
+    await expect(
+      loadAuthConfig({
+        ...environment,
+        NODE_ENV: "production",
+        COOKIE_SECURE: "false",
+        ALLOW_LAN_HTTP: "false",
+      }),
+    ).rejects.toThrow(
+      "COOKIE_SECURE=false requires ALLOW_LAN_HTTP=true outside development.",
+    );
+  });
+
+  it.each(["yes", "1", "TRUE", ""])(
+    "rejects an invalid LAN HTTP acknowledgement: %j",
+    async (allowLanHttp) => {
+      await expect(
+        loadAuthConfig({
+          ...environment,
+          ALLOW_LAN_HTTP: allowLanHttp,
+        }),
+      ).rejects.toThrow("ALLOW_LAN_HTTP must be either true or false.");
     },
   );
 

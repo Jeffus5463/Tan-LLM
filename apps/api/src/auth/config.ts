@@ -16,6 +16,7 @@ export async function loadAuthConfig(
   const passwordHash = environment.AUTH_PASSWORD_HASH?.trim();
   const sessionSecret = environment.SESSION_SECRET;
   const cookieSecure = environment.COOKIE_SECURE ?? "true";
+  const allowLanHttp = environment.ALLOW_LAN_HTTP ?? "false";
 
   if (!username) {
     throw new Error("AUTH_USERNAME is required.");
@@ -35,9 +36,17 @@ export async function loadAuthConfig(
     throw new Error("COOKIE_SECURE must be either true or false.");
   }
 
-  if (cookieSecure === "false" && environment.NODE_ENV !== "development") {
+  if (allowLanHttp !== "true" && allowLanHttp !== "false") {
+    throw new Error("ALLOW_LAN_HTTP must be either true or false.");
+  }
+
+  if (
+    cookieSecure === "false" &&
+    environment.NODE_ENV !== "development" &&
+    allowLanHttp !== "true"
+  ) {
     throw new Error(
-      "COOKIE_SECURE=false is allowed only when NODE_ENV=development.",
+      "COOKIE_SECURE=false requires ALLOW_LAN_HTTP=true outside development.",
     );
   }
 
