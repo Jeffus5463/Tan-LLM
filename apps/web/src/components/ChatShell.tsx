@@ -2,7 +2,10 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import type { ChatSummary } from "../api/client.js";
 import { useChatWorkspace } from "../chats/useChatWorkspace.js";
+import { useConversation } from "../chats/useConversation.js";
 import { Brand } from "./Brand.js";
+import { MessageThread } from "./MessageThread.js";
+import { PromptComposer } from "./PromptComposer.js";
 
 interface ChatShellProps {
   username: string;
@@ -66,9 +69,15 @@ export function ChatShell({
   onSessionExpired,
 }: ChatShellProps) {
   const workspace = useChatWorkspace(onSessionExpired);
+  const conversation = useConversation({
+    chat: workspace.selectedChat,
+    onChatUpdated: workspace.applyChatUpdate,
+    onSessionExpired,
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   const selectedChatId = workspace.selectedChat?.id ?? null;
 
@@ -111,6 +120,26 @@ export function ChatShell({
     setSidebarOpen(false);
   };
 
+  const updateDraft = (value: string) => {
+    if (!selectedChatId) {
+      return;
+    }
+
+    setDrafts((current) => ({ ...current, [selectedChatId]: value }));
+  };
+
+  const submitPrompt = () => {
+    if (!selectedChatId) {
+      return;
+    }
+
+    const content = drafts[selectedChatId] ?? "";
+
+    void conversation.sendMessage(content, () => {
+      setDrafts((current) => ({ ...current, [selectedChatId]: "" }));
+    });
+  };
+
   const currentModelMissing =
     workspace.selectedChat !== null &&
     !workspace.models.includes(workspace.selectedChat.model);
@@ -118,7 +147,14 @@ export function ChatShell({
     ? [workspace.selectedChat.model, ...workspace.models]
     : workspace.models;
   const actionPending = workspace.pendingAction !== null;
-  const displayedMessage = sessionMessage ?? workspace.message;
+  const selectedChatGenerating =
+    conversation.generation?.chatId === selectedChatId;
+  const selectedActionBlocked = actionPending || selectedChatGenerating;
+  const displayedMessage =
+    sessionMessage ?? workspace.message ?? conversation.message;
+  const dismissDisplayedMessage = workspace.message
+    ? workspace.clearMessage
+    : conversation.clearMessage;
 
   return (
     <div className="app-shell">
@@ -221,7 +257,7 @@ export function ChatShell({
               <button
                 type="button"
                 aria-label="Dismiss message"
-                onClick={workspace.clearMessage}
+                onClick={dismissDisplayedMessage}
               >
                 ×
               </button>
@@ -260,14 +296,14 @@ export function ChatShell({
                       <button
                         className="button button--primary button--small"
                         type="submit"
-                        disabled={actionPending}
+                        disabled={selectedActionBlocked}
                       >
                         {workspace.pendingAction === "rename" ? "Saving…" : "Save"}
                       </button>
                       <button
                         className="button button--secondary button--small"
                         type="button"
-                        disabled={actionPending}
+                        disabled={selectedActionBlocked}
                         onClick={() => {
                           setRenaming(false);
                           setDraftTitle(workspace.selectedChat?.title ?? "");
@@ -293,6 +329,7 @@ export function ChatShell({
                       value={workspace.selectedChat.model}
                       disabled={
                         actionPending ||
+                        selectedChatGenerating ||
                         workspace.modelsPhase !== "ready" ||
                         workspace.models.length === 0
                       }
@@ -313,7 +350,7 @@ export function ChatShell({
                   <button
                     className="button button--secondary button--small"
                     type="button"
-                    disabled={actionPending}
+                    disabled={selectedActionBlocked}
                     onClick={() => setRenaming(true)}
                   >
                     Rename
@@ -321,7 +358,7 @@ export function ChatShell({
                   <button
                     className="button button--danger button--small"
                     type="button"
-                    disabled={actionPending}
+                    disabled={selectedActionBlocked}
                     onClick={() => void confirmDelete()}
                   >
                     {workspace.pendingAction === "delete" ? "Deleting…" : "Delete"}
@@ -343,13 +380,28 @@ export function ChatShell({
               </p>
             ) : null}
 
-            <div className="conversation-placeholder">
-              <div className="welcome-mark" aria-hidden="true">
-                T
-              </div>
-              <h2>Ready when you are</h2>
-              <p>This shared conversation is available to everyone signed in at home.</p>
-            </div>
+            <MessageThread
+              messages={conversation.detail?.messages ?? []}
+              phase={
+                conversation.phase === "idle"
+                  ? "loading"
+                  : conversation.phase
+              }
+              onRetry={conversation.loadConversation}
+            />
+            <PromptComposer
+              chatId={workspace.selectedChat.id}
+              value={drafts[workspace.selectedChat.id] ?? ""}
+              disabled={
+                conversation.phase !== "ready" ||
+                workspace.modelsPhase !== "ready" ||
+                !workspace.models.includes(workspace.selectedChat.model)
+              }
+              generation={conversation.generation}
+              onChange={updateDraft}
+              onSubmit={submitPrompt}
+              onStop={conversation.stopGeneration}
+            />
           </section>
         ) : (
           <section className="workspace__welcome" aria-labelledby="welcome-heading">

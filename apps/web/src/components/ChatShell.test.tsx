@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatSummary } from "../api/client.js";
+import type { ChatMessage, ChatSummary } from "../api/client.js";
 import { ChatShell } from "./ChatShell.js";
 
 const firstChat: ChatSummary = {
@@ -23,9 +23,12 @@ const secondChat: ChatSummary = {
 
 interface TestApiOptions {
   initialChats?: ChatSummary[];
+  initialMessages?: Record<string, ChatMessage[]>;
   modelsStatus?: number;
   patchStatus?: number;
   chatsStatus?: number;
+  generation?: "complete" | "busy" | "pending" | "error";
+  generatedContent?: string;
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -45,6 +48,12 @@ function requestPath(input: RequestInfo | URL): string {
 
 function createTestApi(options: TestApiOptions = {}) {
   let chats = [...(options.initialChats ?? [firstChat, secondChat])];
+  const messages = new Map(
+    Object.entries(options.initialMessages ?? {}).map(([chatId, chatMessages]) => [
+      chatId,
+      [...chatMessages],
+    ]),
+  );
   let nextId = 3;
 
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
@@ -83,7 +92,105 @@ function createTestApi(options: TestApiOptions = {}) {
         updatedAt: "2026-09-07T01:00:00.000Z",
       };
       chats = [chat, ...chats];
+      messages.set(chat.id, []);
       return jsonResponse({ chat }, 201);
+    }
+
+    if (
+      path.startsWith("/api/chats/") &&
+      path.endsWith("/messages") &&
+      method === "POST"
+    ) {
+      if (options.generation === "busy") {
+        return jsonResponse({ error: "Generation in progress" }, 409);
+      }
+
+      const chatId = decodeURIComponent(
+        path.slice("/api/chats/".length, -"/messages".length),
+      );
+      const content = (JSON.parse(String(init?.body)) as { content: string })
+        .content;
+      const existingMessages = messages.get(chatId) ?? [];
+      const sequence = existingMessages.at(-1)?.sequence ?? -1;
+      const timestamp = "2026-09-07T02:00:00.000Z";
+      const userMessage: ChatMessage = {
+        id: "user-message",
+        sequence: sequence + 1,
+        role: "user",
+        content,
+        status: "complete",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      const assistantMessage: ChatMessage = {
+        id: "assistant-message",
+        sequence: sequence + 2,
+        role: "assistant",
+        content:
+          options.generation === "error"
+            ? ""
+            : (options.generatedContent ?? "Local response"),
+        status: options.generation === "error" ? "error" : "complete",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      messages.set(chatId, [
+        ...existingMessages,
+        userMessage,
+        assistantMessage,
+      ]);
+
+      const startEvent =
+        `event: start\ndata: ${JSON.stringify({
+          chatId,
+          userMessageId: userMessage.id,
+          messageId: assistantMessage.id,
+        })}\n\n`;
+
+      if (options.generation === "pending") {
+        assistantMessage.content = "Partial answer";
+        assistantMessage.status = "streaming";
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                `${startEvent}event: token\ndata: ${JSON.stringify({ content: "Partial answer" })}\n\n`,
+              ),
+            );
+            init?.signal?.addEventListener(
+              "abort",
+              () => {
+                assistantMessage.status = "cancelled";
+                controller.error(new DOMException("Aborted", "AbortError"));
+              },
+              { once: true },
+            );
+          },
+        });
+
+        return new Response(stream, {
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }
+
+      const terminalEvent =
+        options.generation === "error"
+          ? `event: error\ndata: ${JSON.stringify({
+              messageId: assistantMessage.id,
+              message: "Generation failed",
+            })}\n\n`
+          : `event: completion\ndata: ${JSON.stringify({
+              messageId: assistantMessage.id,
+            })}\n\n`;
+      const tokenEvent =
+        options.generation === "error"
+          ? ""
+          : `event: token\ndata: ${JSON.stringify({ content: assistantMessage.content })}\n\n`;
+
+      return new Response(`${startEvent}${tokenEvent}${terminalEvent}`, {
+        headers: { "Content-Type": "text/event-stream" },
+      });
     }
 
     const chatId = path.startsWith("/api/chats/")
@@ -110,7 +217,17 @@ function createTestApi(options: TestApiOptions = {}) {
 
     if (chatId && method === "DELETE") {
       chats = chats.filter((chat) => chat.id !== chatId);
+      messages.delete(chatId);
       return new Response(null, { status: 204 });
+    }
+
+    if (chatId && method === "GET" && existingChat) {
+      return jsonResponse({
+        chat: {
+          ...existingChat,
+          messages: messages.get(chatId) ?? [],
+        },
+      });
     }
 
     return jsonResponse({ error: "Not found" }, 404);
@@ -291,5 +408,132 @@ describe("shared conversation management", () => {
     renderShell(onSessionExpired);
 
     await waitFor(() => expect(onSessionExpired).toHaveBeenCalledOnce());
+  });
+
+  it("loads stored messages and streams a new response", async () => {
+    const newChat = { ...firstChat, title: "New chat" };
+    const fetchMock = createTestApi({
+      initialChats: [newChat],
+      initialMessages: {
+        [newChat.id]: [
+          {
+            id: "stored-message",
+            sequence: 0,
+            role: "assistant",
+            content: "Stored response",
+            status: "complete",
+            createdAt: newChat.createdAt,
+            updatedAt: newChat.updatedAt,
+          },
+        ],
+      },
+      generatedContent: "**Fresh** response",
+    });
+    const user = userEvent.setup();
+    renderShell();
+
+    expect(await screen.findByText("Stored response")).toBeTruthy();
+    const composer = screen.getByLabelText("Message");
+    await user.type(composer, "Plan dinner");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Fresh")).toBeTruthy();
+    expect((composer as HTMLTextAreaElement).value).toBe("");
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) =>
+          requestPath(input) === "/api/chats/chat-1/messages" &&
+          init?.body === JSON.stringify({ content: "Plan dinner" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("creates a local title from the first accepted message", async () => {
+    createTestApi({
+      initialChats: [{ ...firstChat, title: "New chat" }],
+    });
+    const user = userEvent.setup();
+    renderShell();
+
+    await screen.findByText("Ready when you are");
+    await user.type(
+      screen.getByLabelText("Message"),
+      "Plan our weekend meals",
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Plan our weekend meals" }),
+    ).toBeTruthy();
+  });
+
+  it("keeps separate unsent drafts when switching conversations", async () => {
+    createTestApi();
+    const user = userEvent.setup();
+    renderShell();
+
+    await screen.findByText("Ready when you are");
+    const composer = screen.getByLabelText("Message");
+    await user.type(composer, "Kitchen draft");
+    await user.click(screen.getByRole("button", { name: /Weekend ideas/ }));
+    await waitFor(() =>
+      expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe(
+        "",
+      ),
+    );
+    await user.type(screen.getByLabelText("Message"), "Weekend draft");
+    await user.click(screen.getByRole("button", { name: /Kitchen plans/ }));
+
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe(
+      "Kitchen draft",
+    );
+  });
+
+  it("keeps a draft when another household request is busy", async () => {
+    createTestApi({ generation: "busy" });
+    const user = userEvent.setup();
+    renderShell();
+
+    await screen.findByText("Ready when you are");
+    const composer = screen.getByLabelText("Message");
+    await user.type(composer, "Keep this draft");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Someone else is using the model",
+    );
+    expect((composer as HTMLTextAreaElement).value).toBe("Keep this draft");
+  });
+
+  it("stops the originating browser's active response", async () => {
+    createTestApi({ generation: "pending" });
+    const user = userEvent.setup();
+    renderShell();
+
+    await screen.findByText("Ready when you are");
+    await user.type(screen.getByLabelText("Message"), "Start a response");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Partial answer")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+
+    expect(await screen.findByText("Stopped")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  });
+
+  it("marks a failed model response explicitly", async () => {
+    createTestApi({ generation: "error" });
+    const user = userEvent.setup();
+    renderShell();
+
+    await screen.findByText("Ready when you are");
+    await user.type(screen.getByLabelText("Message"), "Try this");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "could not complete",
+    );
+    expect(screen.getByText("Failed")).toBeTruthy();
+    expect(screen.getByText("No response was produced.")).toBeTruthy();
   });
 });

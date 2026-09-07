@@ -29,6 +29,7 @@ interface ChatWorkspaceState {
   deleteChat: () => Promise<boolean>;
   changeModel: (model: string) => Promise<void>;
   clearMessage: () => void;
+  applyChatUpdate: (chat: ChatSummary) => void;
 }
 
 function placeFirst(chats: ChatSummary[], updatedChat: ChatSummary) {
@@ -243,6 +244,10 @@ export function useChatWorkspace(
     [handleUnauthorized, selectedChat],
   );
 
+  const applyChatUpdate = useCallback((chat: ChatSummary) => {
+    setChats((current) => placeFirst(current, chat));
+  }, []);
+
   return {
     chats,
     selectedChat,
@@ -258,5 +263,6 @@ export function useChatWorkspace(
     deleteChat,
     changeModel,
     clearMessage: () => setMessage(undefined),
+    applyChatUpdate,
   };
 }
