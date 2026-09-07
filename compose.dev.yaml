@@ -1,0 +1,49 @@
+services:
+  web:
+    build:
+      target: development
+    image: tan-llm-web:dev
+    command:
+      [
+        "npm",
+        "run",
+        "dev",
+        "--workspace=@tan-llm/web",
+        "--",
+        "--host",
+        "0.0.0.0",
+      ]
+    environment:
+      VITE_PROXY_TARGET: http://api:3001
+    volumes:
+      - type: bind
+        source: ./apps/web
+        target: /app/apps/web
+      - type: volume
+        target: /app/apps/web/node_modules
+    ports: !override
+      - name: local-web
+        target: 3000
+        published: "3000"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))",
+        ]
+
+  api:
+    build:
+      target: development
+    image: tan-llm-api:dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - type: bind
+        source: ./apps/api/src
+        target: /app/apps/api/src
+      - app_data:/data
