@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import type { ChatSummary } from "../api/client.js";
 import { useChatWorkspace } from "../chats/useChatWorkspace.js";
 import { useConversation } from "../chats/useConversation.js";
+import { useVisiblePolling } from "../shared/useVisiblePolling.js";
 import { Brand } from "./Brand.js";
 import { MessageThread } from "./MessageThread.js";
 import { PromptComposer } from "./PromptComposer.js";
@@ -80,6 +81,22 @@ export function ChatShell({
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   const selectedChatId = workspace.selectedChat?.id ?? null;
+  const localGenerationChatId = conversation.generation?.chatId ?? null;
+  const activeGenerationChatId =
+    localGenerationChatId ?? workspace.status?.activeGeneration?.chatId ?? null;
+
+  const synchronizeSharedState = useCallback(async () => {
+    await Promise.all([
+      workspace.synchronize(localGenerationChatId),
+      conversation.synchronizeSelectedConversation(),
+    ]);
+  }, [
+    conversation.synchronizeSelectedConversation,
+    localGenerationChatId,
+    workspace.synchronize,
+  ]);
+
+  useVisiblePolling(synchronizeSharedState);
 
   useEffect(() => {
     setRenaming(false);
@@ -147,8 +164,7 @@ export function ChatShell({
     ? [workspace.selectedChat.model, ...workspace.models]
     : workspace.models;
   const actionPending = workspace.pendingAction !== null;
-  const selectedChatGenerating =
-    conversation.generation?.chatId === selectedChatId;
+  const selectedChatGenerating = activeGenerationChatId === selectedChatId;
   const selectedActionBlocked = actionPending || selectedChatGenerating;
   const displayedMessage =
     sessionMessage ?? workspace.message ?? conversation.message;
@@ -380,6 +396,17 @@ export function ChatShell({
               </p>
             ) : null}
 
+            {workspace.statusPhase === "unavailable" ? (
+              <p className="model-status model-status--warning" role="status">
+                Live household status is unavailable. Requests remain protected
+                by the server.
+              </p>
+            ) : workspace.status?.services.ollama === "offline" ? (
+              <p className="model-status model-status--warning" role="status">
+                The local model service is offline.
+              </p>
+            ) : null}
+
             <MessageThread
               messages={conversation.detail?.messages ?? []}
               phase={
@@ -395,9 +422,11 @@ export function ChatShell({
               disabled={
                 conversation.phase !== "ready" ||
                 workspace.modelsPhase !== "ready" ||
+                workspace.status?.services.ollama === "offline" ||
                 !workspace.models.includes(workspace.selectedChat.model)
               }
               generation={conversation.generation}
+              activeGenerationChatId={activeGenerationChatId}
               onChange={updateDraft}
               onSubmit={submitPrompt}
               onStop={conversation.stopGeneration}

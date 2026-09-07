@@ -4,14 +4,17 @@ import {
   ApiError,
   createChat as requestCreateChat,
   deleteChat as requestDeleteChat,
+  getStatus,
   listChats,
   listModels,
   updateChat as requestUpdateChat,
+  type ApplicationStatus,
   type ChatSummary,
 } from "../api/client.js";
 
 type LoadPhase = "loading" | "ready" | "error";
 type ModelsPhase = "loading" | "ready" | "unavailable";
+type StatusPhase = "loading" | "ready" | "unavailable";
 type PendingAction = "create" | "rename" | "delete" | "model" | null;
 
 interface ChatWorkspaceState {
@@ -20,10 +23,13 @@ interface ChatWorkspaceState {
   phase: LoadPhase;
   models: string[];
   modelsPhase: ModelsPhase;
+  status: ApplicationStatus | null;
+  statusPhase: StatusPhase;
   message?: string;
   pendingAction: PendingAction;
   selectChat: (chatId: string) => void;
   refresh: () => Promise<void>;
+  synchronize: (preserveChatId?: string | null) => Promise<void>;
   createChat: () => Promise<void>;
   renameChat: (title: string) => Promise<boolean>;
   deleteChat: () => Promise<boolean>;
@@ -34,6 +40,26 @@ interface ChatWorkspaceState {
 
 function placeFirst(chats: ChatSummary[], updatedChat: ChatSummary) {
   return [updatedChat, ...chats.filter((chat) => chat.id !== updatedChat.id)];
+}
+
+function mergeSynchronizedChats(
+  current: ChatSummary[],
+  incoming: ChatSummary[],
+  preserveChatId: string | null,
+): ChatSummary[] {
+  if (!preserveChatId) {
+    return incoming;
+  }
+
+  const preservedChat = current.find((chat) => chat.id === preserveChatId);
+
+  if (!preservedChat) {
+    return incoming;
+  }
+
+  return incoming.map((chat) =>
+    chat.id === preserveChatId ? preservedChat : chat,
+  );
 }
 
 function actionErrorMessage(error: unknown, fallback: string): string {
@@ -63,6 +89,8 @@ export function useChatWorkspace(
   const [models, setModels] = useState<string[]>([]);
   const [defaultModel, setDefaultModel] = useState<string | null>(null);
   const [modelsPhase, setModelsPhase] = useState<ModelsPhase>("loading");
+  const [status, setStatus] = useState<ApplicationStatus | null>(null);
+  const [statusPhase, setStatusPhase] = useState<StatusPhase>("loading");
   const [message, setMessage] = useState<string>();
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
 
@@ -82,17 +110,21 @@ export function useChatWorkspace(
     setPhase("loading");
     setMessage(undefined);
     setModelsPhase("loading");
+    setStatusPhase("loading");
 
-    const [chatResult, modelResult] = await Promise.allSettled([
+    const [chatResult, modelResult, statusResult] = await Promise.allSettled([
       listChats(),
       listModels(),
+      getStatus(),
     ]);
 
     if (
       (chatResult.status === "rejected" &&
         handleUnauthorized(chatResult.reason)) ||
       (modelResult.status === "rejected" &&
-        handleUnauthorized(modelResult.reason))
+        handleUnauthorized(modelResult.reason)) ||
+      (statusResult.status === "rejected" &&
+        handleUnauthorized(statusResult.reason))
     ) {
       return;
     }
@@ -121,6 +153,14 @@ export function useChatWorkspace(
       setDefaultModel(modelResult.value.defaultModel);
       setModelsPhase("ready");
     }
+
+    if (statusResult.status === "rejected") {
+      setStatus(null);
+      setStatusPhase("unavailable");
+    } else {
+      setStatus(statusResult.value);
+      setStatusPhase("ready");
+    }
   }, [handleUnauthorized]);
 
   useEffect(() => {
@@ -130,6 +170,45 @@ export function useChatWorkspace(
   const selectedChat = useMemo(
     () => chats.find((chat) => chat.id === selectedChatId) ?? null,
     [chats, selectedChatId],
+  );
+
+  const synchronize = useCallback(
+    async (preserveChatId: string | null = null) => {
+      const [chatResult, statusResult] = await Promise.allSettled([
+        listChats(),
+        getStatus(),
+      ]);
+
+      if (
+        (chatResult.status === "rejected" &&
+          handleUnauthorized(chatResult.reason)) ||
+        (statusResult.status === "rejected" &&
+          handleUnauthorized(statusResult.reason))
+      ) {
+        return;
+      }
+
+      if (chatResult.status === "fulfilled") {
+        setChats((current) =>
+          mergeSynchronizedChats(current, chatResult.value, preserveChatId),
+        );
+        setSelectedChatId((current) =>
+          chatResult.value.some((chat) => chat.id === current)
+            ? current
+            : (chatResult.value[0]?.id ?? null),
+        );
+        setPhase("ready");
+      }
+
+      if (statusResult.status === "rejected") {
+        setStatus(null);
+        setStatusPhase("unavailable");
+      } else {
+        setStatus(statusResult.value);
+        setStatusPhase("ready");
+      }
+    },
+    [handleUnauthorized],
   );
 
   const createChat = useCallback(async () => {
@@ -254,10 +333,13 @@ export function useChatWorkspace(
     phase,
     models,
     modelsPhase,
+    status,
+    statusPhase,
     message,
     pendingAction,
     selectChat: setSelectedChatId,
     refresh,
+    synchronize,
     createChat,
     renameChat,
     deleteChat,

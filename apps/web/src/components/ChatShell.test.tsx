@@ -1,8 +1,12 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatMessage, ChatSummary } from "../api/client.js";
+import type {
+  ApplicationStatus,
+  ChatMessage,
+  ChatSummary,
+} from "../api/client.js";
 import { ChatShell } from "./ChatShell.js";
 
 const firstChat: ChatSummary = {
@@ -29,6 +33,9 @@ interface TestApiOptions {
   chatsStatus?: number;
   generation?: "complete" | "busy" | "pending" | "error";
   generatedContent?: string;
+  status?: ApplicationStatus;
+  synchronizedChats?: ChatSummary[];
+  synchronizedMessages?: Record<string, ChatMessage[]>;
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -55,6 +62,8 @@ function createTestApi(options: TestApiOptions = {}) {
     ]),
   );
   let nextId = 3;
+  let chatListRequestCount = 0;
+  const chatDetailRequestCounts = new Map<string, number>();
 
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
     const path = requestPath(input);
@@ -66,6 +75,12 @@ function createTestApi(options: TestApiOptions = {}) {
           { error: options.chatsStatus === 401 ? "Unauthorized" : "Unavailable" },
           options.chatsStatus,
         );
+      }
+
+      chatListRequestCount += 1;
+
+      if (chatListRequestCount > 1 && options.synchronizedChats) {
+        chats = [...options.synchronizedChats];
       }
 
       return jsonResponse({ chats });
@@ -80,6 +95,15 @@ function createTestApi(options: TestApiOptions = {}) {
         defaultModel: "qwen3.5:4b",
         models: ["qwen3.5:4b", "qwen3.5:2b"],
       });
+    }
+
+    if (path === "/api/status" && method === "GET") {
+      return jsonResponse(
+        options.status ?? {
+          services: { ollama: "available" },
+          activeGeneration: null,
+        },
+      );
     }
 
     if (path === "/api/chats" && method === "POST") {
@@ -222,6 +246,13 @@ function createTestApi(options: TestApiOptions = {}) {
     }
 
     if (chatId && method === "GET" && existingChat) {
+      const requestCount = (chatDetailRequestCounts.get(chatId) ?? 0) + 1;
+      chatDetailRequestCounts.set(chatId, requestCount);
+
+      if (requestCount > 1 && options.synchronizedMessages?.[chatId]) {
+        messages.set(chatId, [...options.synchronizedMessages[chatId]]);
+      }
+
       return jsonResponse({
         chat: {
           ...existingChat,
@@ -535,5 +566,163 @@ describe("shared conversation management", () => {
     );
     expect(screen.getByText("Failed")).toBeTruthy();
     expect(screen.getByText("No response was produced.")).toBeTruthy();
+  });
+
+  it("shows shared busy state without exposing another device's Stop control", async () => {
+    createTestApi({
+      status: {
+        services: { ollama: "available" },
+        activeGeneration: {
+          chatId: firstChat.id,
+          messageId: "remote-assistant",
+        },
+      },
+    });
+    const user = userEvent.setup();
+    renderShell();
+
+    await screen.findByRole("heading", { name: "Kitchen plans" });
+    expect(
+      screen.getByText(/Another household device is generating/),
+    ).toBeTruthy();
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).disabled).toBe(
+      true,
+    );
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect((screen.getByRole("combobox") as HTMLSelectElement).disabled).toBe(
+      true,
+    );
+    expect(
+      (screen.getByRole("button", { name: "Delete" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: /Weekend ideas/ }));
+
+    expect(
+      await screen.findByText(/busy with another household conversation/),
+    ).toBeTruthy();
+    expect((screen.getByRole("combobox") as HTMLSelectElement).disabled).toBe(
+      false,
+    );
+    expect(
+      (screen.getByRole("button", { name: "Delete" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
+  it("reports an offline model service and disables generation", async () => {
+    createTestApi({
+      status: {
+        services: { ollama: "offline" },
+        activeGeneration: null,
+      },
+    });
+    renderShell();
+
+    await screen.findByRole("heading", { name: "Kitchen plans" });
+    expect(screen.getByText("The local model service is offline.")).toBeTruthy();
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it("merges shared updates immediately when the page becomes visible", async () => {
+    const remoteMessage: ChatMessage = {
+      id: "remote-message",
+      sequence: 0,
+      role: "assistant",
+      content: "Updated from another device",
+      status: "streaming",
+      createdAt: "2026-09-07T03:00:00.000Z",
+      updatedAt: "2026-09-07T03:00:00.000Z",
+    };
+    const apiOptions: TestApiOptions = {
+      synchronizedChats: [
+        {
+          ...firstChat,
+          title: "Renamed from the kitchen",
+          updatedAt: "2026-09-07T03:00:00.000Z",
+        },
+        secondChat,
+      ],
+      synchronizedMessages: {
+        [firstChat.id]: [remoteMessage],
+      },
+      status: {
+        services: { ollama: "available" },
+        activeGeneration: null,
+      },
+    };
+    createTestApi(apiOptions);
+    renderShell();
+
+    await screen.findByText("Ready when you are");
+    const composer = screen.getByLabelText("Message");
+    fireEvent.change(composer, { target: { value: "Unsent household note" } });
+    apiOptions.status = {
+      services: { ollama: "available" },
+      activeGeneration: {
+        chatId: firstChat.id,
+        messageId: remoteMessage.id,
+      },
+    };
+
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(
+      await screen.findByRole("heading", { name: "Renamed from the kitchen" }),
+    ).toBeTruthy();
+    expect(await screen.findByText("Updated from another device")).toBeTruthy();
+    expect(
+      screen.getByText(/Another household device is generating/),
+    ).toBeTruthy();
+    expect((composer as HTMLTextAreaElement).value).toBe("Unsent household note");
+  });
+
+  it("does not overwrite the originating browser's live streamed text", async () => {
+    const synchronizedMessages: Record<string, ChatMessage[]> = {
+      [firstChat.id]: [
+        {
+          id: "assistant-message",
+          sequence: 1,
+          role: "assistant",
+          content: "Older saved partial",
+          status: "streaming",
+          createdAt: "2026-09-07T02:00:00.000Z",
+          updatedAt: "2026-09-07T02:00:00.000Z",
+        },
+      ],
+    };
+    createTestApi({
+      generation: "pending",
+      synchronizedMessages,
+    });
+    const user = userEvent.setup();
+    renderShell();
+
+    await screen.findByText("Ready when you are");
+    await user.type(screen.getByLabelText("Message"), "Stream locally");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("Partial answer")).toBeTruthy();
+
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(screen.getByText("Partial answer")).toBeTruthy();
+    expect(screen.queryByText("Older saved partial")).toBeNull();
+
+    synchronizedMessages[firstChat.id] = [
+      {
+        ...synchronizedMessages[firstChat.id]![0]!,
+        content: "Partial answer",
+        status: "cancelled",
+      },
+    ];
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    expect(await screen.findByText("Stopped")).toBeTruthy();
   });
 });

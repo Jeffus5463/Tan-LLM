@@ -61,6 +61,13 @@ function createApiMock(behavior: ApiBehavior) {
       });
     }
 
+    if (path === "/api/status") {
+      return jsonResponse({
+        services: { ollama: "available" },
+        activeGeneration: null,
+      });
+    }
+
     return jsonResponse({ error: "Not found" }, 404);
   });
   vi.stubGlobal("fetch", fetchMock);

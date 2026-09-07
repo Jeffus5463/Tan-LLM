@@ -5,6 +5,7 @@ import {
   createChat,
   deleteChat,
   getSession,
+  getStatus,
   listChats,
   listModels,
   updateChat,
@@ -65,7 +66,7 @@ describe("API client", () => {
     });
   });
 
-  it("uses the shared chat and model endpoints", async () => {
+  it("uses the shared application endpoints", async () => {
     const chat = {
       id: "chat-1",
       title: "New chat",
@@ -103,6 +104,15 @@ describe("API client", () => {
         );
       }
 
+      if (path === "/api/status") {
+        return new Response(
+          JSON.stringify({
+            services: { ollama: "available" },
+            activeGeneration: null,
+          }),
+        );
+      }
+
       return new Response(null, { status: 404 });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -116,6 +126,10 @@ describe("API client", () => {
     await expect(listModels()).resolves.toEqual({
       defaultModel: "qwen3.5:4b",
       models: ["qwen3.5:4b"],
+    });
+    await expect(getStatus()).resolves.toEqual({
+      services: { ollama: "available" },
+      activeGeneration: null,
     });
 
     expect(fetchMock).toHaveBeenCalledWith(

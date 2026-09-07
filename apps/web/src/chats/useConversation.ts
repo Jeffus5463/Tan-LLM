@@ -173,21 +173,46 @@ export function useConversation({
   );
 
   const synchronizeConversation = useCallback(
-    async (chatId: string) => {
+    async (chatId: string, preserveLocalStream = false) => {
       try {
         const loadedChat = await getChat(chatId);
-        onChatUpdated(chatSummary(loadedChat));
 
-        if (selectedChatIdRef.current === chatId) {
+        if (!preserveLocalStream) {
+          onChatUpdated(chatSummary(loadedChat));
+        }
+
+        if (
+          selectedChatIdRef.current === chatId &&
+          (!preserveLocalStream || activeRequest.current?.chatId !== chatId)
+        ) {
           setDetail(loadedChat);
           setPhase("ready");
         }
       } catch (error) {
-        handleUnauthorized(error);
+        if (handleUnauthorized(error)) {
+          return;
+        }
+
+        if (
+          error instanceof ApiError &&
+          error.status === 404 &&
+          selectedChatIdRef.current === chatId
+        ) {
+          setPhase("missing");
+          setMessage("This conversation was deleted from another device.");
+        }
       }
     },
     [handleUnauthorized, onChatUpdated],
   );
+
+  const synchronizeSelectedConversation = useCallback(async () => {
+    if (!selectedChatId) {
+      return;
+    }
+
+    await synchronizeConversation(selectedChatId, true);
+  }, [selectedChatId, synchronizeConversation]);
 
   const sendMessage = useCallback(
     async (content: string, onAccepted: () => void) => {
@@ -440,6 +465,7 @@ export function useConversation({
     message,
     generation,
     loadConversation,
+    synchronizeSelectedConversation,
     sendMessage,
     stopGeneration,
     clearMessage: () => setMessage(undefined),

@@ -34,6 +34,18 @@ export interface ModelsResponse {
   models: string[];
 }
 
+export interface ActiveGeneration {
+  chatId: string;
+  messageId: string;
+}
+
+export interface ApplicationStatus {
+  services: {
+    ollama: "available" | "offline";
+  };
+  activeGeneration: ActiveGeneration | null;
+}
+
 interface ChatListResponse {
   chats: ChatSummary[];
 }
@@ -195,4 +207,8 @@ export function deleteChat(chatId: string): Promise<void> {
 
 export function listModels(): Promise<ModelsResponse> {
   return request<ModelsResponse>("/api/models");
+}
+
+export function getStatus(): Promise<ApplicationStatus> {
+  return request<ApplicationStatus>("/api/status");
 }

@@ -7,6 +7,7 @@ interface PromptComposerProps {
   value: string;
   disabled: boolean;
   generation: LocalGeneration | null;
+  activeGenerationChatId: string | null;
   onChange: (value: string) => void;
   onSubmit: () => void;
   onStop: () => void;
@@ -17,12 +18,16 @@ export function PromptComposer({
   value,
   disabled,
   generation,
+  activeGenerationChatId,
   onChange,
   onSubmit,
   onStop,
 }: PromptComposerProps) {
   const currentChatGenerating = generation?.chatId === chatId;
   const anotherChatGenerating = generation && !currentChatGenerating;
+  const anotherDeviceGenerating = !generation && activeGenerationChatId !== null;
+  const generationInThisChat = activeGenerationChatId === chatId;
+  const composerBusy = Boolean(generation) || anotherDeviceGenerating;
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -46,6 +51,12 @@ export function PromptComposer({
         <p className="generation-notice" role="status">
           Your response in “{generation.chatTitle}” is still generating.
         </p>
+      ) : anotherDeviceGenerating ? (
+        <p className="generation-notice" role="status">
+          {generationInThisChat
+            ? "Another household device is generating in this conversation."
+            : "The model is busy with another household conversation."}
+        </p>
       ) : null}
       <form className="prompt-composer" onSubmit={submit}>
         <label className="visually-hidden" htmlFor={`prompt-${chatId}`}>
@@ -57,7 +68,7 @@ export function PromptComposer({
           rows={1}
           maxLength={16_000}
           placeholder="Message your local model"
-          disabled={disabled || Boolean(generation)}
+          disabled={disabled || composerBusy}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={handleKeyDown}
         />
@@ -78,7 +89,7 @@ export function PromptComposer({
             <button
               className="button button--primary composer-button"
               type="submit"
-              disabled={disabled || Boolean(generation) || !value.trim()}
+              disabled={disabled || composerBusy || !value.trim()}
             >
               Send
             </button>
