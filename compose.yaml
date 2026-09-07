@@ -84,6 +84,9 @@ services:
       TRUSTED_PROXY_IPS: "${TRUSTED_PROXY_IPS:-172.28.50.2}"
     volumes:
       - app_data:/data
+      - type: bind
+        source: ./backups
+        target: /backups
     depends_on:
       ollama:
         condition: service_healthy
