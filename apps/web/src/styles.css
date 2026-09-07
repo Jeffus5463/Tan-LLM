@@ -1168,6 +1168,86 @@ textarea:focus-visible {
   text-align: left;
 }
 
+.response-copy {
+  margin-top: 0.65rem;
+}
+
+.response-copy__toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.response-copy__button {
+  border: 0;
+  border-radius: 0.45rem;
+  padding: 0.35rem 0.55rem;
+  color: #716659;
+  background: transparent;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.response-copy__button:hover {
+  color: #332e27;
+  background: #eae2d6;
+}
+
+.response-copy__button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.manual-copy {
+  margin-top: 0.45rem;
+  border: 1px solid #d7cdbf;
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  background: #fbf7f0;
+}
+
+.manual-copy label {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #51483d;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.manual-copy textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #cfc4b5;
+  border-radius: 0.55rem;
+  padding: 0.65rem;
+  color: #332e27;
+  background: #fff;
+  font: 0.78rem/1.5 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+}
+
+.manual-copy textarea:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.manual-copy__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.55rem;
+}
+
+.manual-copy__footer p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
 .markdown-image-placeholder {
   color: var(--muted);
   font-style: italic;

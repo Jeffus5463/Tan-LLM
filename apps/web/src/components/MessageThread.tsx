@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import type { ChatMessage } from "../api/client.js";
+import { CopyResponse } from "./CopyResponse.js";
 import { MarkdownMessage } from "./MarkdownMessage.js";
 
 interface MessageThreadProps {
@@ -109,6 +110,11 @@ export function MessageThread({
                 ) : (
                   <p className="user-message">{message.content}</p>
                 )}
+                {message.role === "assistant" &&
+                message.content &&
+                message.status !== "streaming" ? (
+                  <CopyResponse content={message.content} />
+                ) : null}
               </article>
             </li>
           );
