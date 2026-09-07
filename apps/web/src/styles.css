@@ -2,7 +2,11 @@
   color: #242018;
   background: #171510;
   font-family:
-    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Inter,
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
     sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -216,7 +220,11 @@ textarea:focus-visible {
   padding: clamp(1rem, 4vw, 3rem);
   color: #f7f1e8;
   background:
-    radial-gradient(circle at 12% 8%, rgb(203 169 123 / 14%), transparent 28rem),
+    radial-gradient(
+      circle at 12% 8%,
+      rgb(203 169 123 / 14%),
+      transparent 28rem
+    ),
     radial-gradient(circle at 88% 95%, rgb(144 107 62 / 9%), transparent 30rem),
     var(--dark);
 }
@@ -283,26 +291,6 @@ textarea:focus-visible {
   color: #b9b0a4;
   font-size: 1rem;
   line-height: 1.7;
-}
-
-.login-panel__network {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  margin: 0;
-  color: #a99f92;
-  font-size: 0.78rem;
-}
-
-.login-panel__network::before {
-  width: 0.48rem;
-  height: 0.48rem;
-  border-radius: 50%;
-  background: #83a37b;
-  box-shadow: 0 0 0 0.25rem rgb(131 163 123 / 12%);
-  content: "";
 }
 
 .login-panel__form {
@@ -469,17 +457,18 @@ textarea:focus-visible {
 
 .app-shell {
   display: grid;
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
   grid-template-columns: 18rem minmax(0, 1fr);
+  overflow: hidden;
   background: var(--canvas);
 }
 
 .sidebar {
   display: flex;
-  min-height: 100vh;
-  min-height: 100dvh;
+  min-height: 0;
   flex-direction: column;
+  overflow: hidden;
   color: #f4ede4;
   background:
     radial-gradient(circle at 0 0, rgb(203 169 123 / 9%), transparent 18rem),
@@ -596,6 +585,8 @@ textarea:focus-visible {
 .conversation-list__items {
   display: grid;
   min-height: 0;
+  flex: 1;
+  align-content: start;
   gap: 0.35rem;
   margin-top: 0.85rem;
   overflow-y: auto;
@@ -699,21 +690,16 @@ textarea:focus-visible {
   position: relative;
   display: flex;
   min-width: 0;
-  min-height: 100vh;
-  min-height: 100dvh;
+  min-height: 0;
   flex-direction: column;
+  overflow: hidden;
   background:
-    radial-gradient(circle at 100% 0, rgb(203 169 123 / 15%), transparent 27rem),
+    radial-gradient(
+      circle at 100% 0,
+      rgb(203 169 123 / 15%),
+      transparent 27rem
+    ),
     var(--canvas);
-}
-
-.workspace__header {
-  display: flex;
-  min-height: 4.8rem;
-  align-items: center;
-  justify-content: flex-end;
-  border-bottom: 1px solid var(--line);
-  padding: 1rem clamp(1.25rem, 4vw, 2.5rem);
 }
 
 .workspace__mobile-brand {
@@ -1225,7 +1211,11 @@ textarea:focus-visible {
   padding: 0.65rem;
   color: #332e27;
   background: #fff;
-  font: 0.78rem/1.5 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font:
+    0.78rem/1.5 "Cascadia Code",
+    "SFMono-Regular",
+    Consolas,
+    monospace;
 }
 
 .manual-copy textarea:focus-visible {
@@ -1377,7 +1367,6 @@ textarea:focus-visible {
   }
 
   .login-panel__message,
-  .login-panel__network,
   .login-panel__intro::after {
     display: none;
   }
@@ -1404,7 +1393,7 @@ textarea:focus-visible {
     z-index: 20;
     inset: 0 auto 0 0;
     width: min(20rem, 88vw);
-    min-height: 100dvh;
+    height: 100dvh;
     box-shadow: 1rem 0 3rem rgb(0 0 0 / 25%);
     transform: translateX(-105%);
     transition: transform 180ms ease;
@@ -1435,7 +1424,7 @@ textarea:focus-visible {
   }
 
   .workspace {
-    min-height: calc(100dvh - 4.3rem);
+    height: 100dvh;
   }
 
   .workspace__header {

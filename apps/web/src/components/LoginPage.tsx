@@ -27,13 +27,10 @@ export function LoginPage({ message, pending, onSubmit }: LoginPageProps) {
             <p className="eyebrow">Private by design</p>
             <h1>Your conversations stay close to home.</h1>
             <p>
-              A shared household workspace powered by the model running on
-              this computer.
+              A shared household workspace powered by the model running on this
+              computer.
             </p>
           </div>
-          <p className="login-panel__network">
-            Available only on your household network
-          </p>
         </div>
 
         <div className="login-panel__form">

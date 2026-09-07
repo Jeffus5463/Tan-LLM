@@ -160,9 +160,10 @@ export function ChatShell({
   const currentModelMissing =
     workspace.selectedChat !== null &&
     !workspace.models.includes(workspace.selectedChat.model);
-  const modelOptions = currentModelMissing && workspace.selectedChat
-    ? [workspace.selectedChat.model, ...workspace.models]
-    : workspace.models;
+  const modelOptions =
+    currentModelMissing && workspace.selectedChat
+      ? [workspace.selectedChat.model, ...workspace.models]
+      : workspace.models;
   const actionPending = workspace.pendingAction !== null;
   const selectedChatGenerating = activeGenerationChatId === selectedChatId;
   const selectedActionBlocked = actionPending || selectedChatGenerating;
@@ -249,7 +250,7 @@ export function ChatShell({
       </aside>
 
       <main className="workspace">
-        <header className="workspace__header">
+        <header>
           <div className="workspace__mobile-brand">
             <button
               className="icon-button workspace__menu"
@@ -263,7 +264,6 @@ export function ChatShell({
             </button>
             <Brand compact />
           </div>
-          <span className="workspace__scope">Shared household history</span>
         </header>
 
         {displayedMessage ? (
@@ -282,7 +282,10 @@ export function ChatShell({
         ) : null}
 
         {workspace.phase === "error" ? (
-          <section className="workspace__state" aria-labelledby="load-error-title">
+          <section
+            className="workspace__state"
+            aria-labelledby="load-error-title"
+          >
             <p className="eyebrow">Connection problem</p>
             <h1 id="load-error-title">Conversations are unavailable</h1>
             <p>The shared history could not be loaded from the laptop.</p>
@@ -300,7 +303,9 @@ export function ChatShell({
               <div className="conversation-heading">
                 {renaming ? (
                   <form className="rename-form" onSubmit={submitRename}>
-                    <label htmlFor="conversation-title">Conversation title</label>
+                    <label htmlFor="conversation-title">
+                      Conversation title
+                    </label>
                     <div>
                       <input
                         id="conversation-title"
@@ -314,7 +319,9 @@ export function ChatShell({
                         type="submit"
                         disabled={selectedActionBlocked}
                       >
-                        {workspace.pendingAction === "rename" ? "Saving…" : "Save"}
+                        {workspace.pendingAction === "rename"
+                          ? "Saving…"
+                          : "Save"}
                       </button>
                       <button
                         className="button button--secondary button--small"
@@ -377,7 +384,9 @@ export function ChatShell({
                     disabled={selectedActionBlocked}
                     onClick={() => void confirmDelete()}
                   >
-                    {workspace.pendingAction === "delete" ? "Deleting…" : "Delete"}
+                    {workspace.pendingAction === "delete"
+                      ? "Deleting…"
+                      : "Delete"}
                   </button>
                 </div>
               ) : null}
@@ -410,9 +419,7 @@ export function ChatShell({
             <MessageThread
               messages={conversation.detail?.messages ?? []}
               phase={
-                conversation.phase === "idle"
-                  ? "loading"
-                  : conversation.phase
+                conversation.phase === "idle" ? "loading" : conversation.phase
               }
               onRetry={conversation.loadConversation}
             />
@@ -433,7 +440,10 @@ export function ChatShell({
             />
           </section>
         ) : (
-          <section className="workspace__welcome" aria-labelledby="welcome-heading">
+          <section
+            className="workspace__welcome"
+            aria-labelledby="welcome-heading"
+          >
             <div className="welcome-mark" aria-hidden="true">
               T
             </div>
